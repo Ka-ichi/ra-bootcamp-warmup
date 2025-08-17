@@ -1,0 +1,113 @@
+---
+title: "analyze"
+output: html_document
+date: "2025-08-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+
+library(tidyverse)
+library(scales)
+library(janitor)
+
+#カレントディレクトリを指定
+setwd("C:/Users/tryca/R_files/ra_bootcamp/ra-bootcamp-warmup/assignment_1")
+# データ読み込み
+df <- readRDS("data/cleaned/students_absence_2013_2022.rds") |>
+  clean_names()
+```
+
+```{r table1}
+# 年別の合計不登校者数
+total_by_year <- df |>
+  group_by(year) |>
+  summarise(total_no_school = sum(no_school, na.rm = TRUE), .groups = "drop")
+
+knitr::kable(total_by_year, format = "html", caption = "年別 合計不登校者数")
+```
+
+# 棒グラフ
+```{r bar1}
+ggplot(total_by_year, aes(x = year, y = total_no_school)) +
+  geom_col(fill = "steelblue") +
+  scale_y_continuous(labels = label_comma()) +
+  labs(x = "年度", y = "合計不登校者数", title = "合計不登校者数の推移")
+```
+
+# 年別不登校割合
+```{r plot1}
+rate_by_year <- df |>
+  group_by(year) |>
+  summarise(avg_rate = weighted.mean(no_school_rate, w = num_student, na.rm = TRUE), .groups = "drop")
+
+ggplot(rate_by_year, aes(x = year, y = avg_rate)) +
+  geom_line(color = "darkred") +
+  geom_point(color = "darkred") +
+  geom_text(aes(label = round(avg_rate, 2)), vjust = -0.6, size = 3) +
+  labs(x = "年度", y = "不登校割合（%）", title = "不登校割合の推移")
+```
+
+```{r cross1}
+# 合計＋割合の2軸グラフ
+cross <- total_by_year |> 
+  left_join(rate_by_year, by = "year")
+scale_factor <- cross |>
+  summarise(scale = max(total_no_school) / max(avg_rate)) |>
+  pull(scale)
+
+ggplot(cross, aes(x = year)) +
+  geom_col(aes(y = total_no_school), fill = "steelblue") +
+  geom_line(aes(y = avg_rate * scale_factor), color = "darkred") +
+  geom_point(aes(y = avg_rate * scale_factor), color = "darkred") +
+  scale_y_continuous(
+    name = "合計不登校者数",
+    labels = label_comma(),
+    sec.axis = sec_axis(~ . / scale_factor, name = "不登校割合（%）")
+  ) +
+  labs(x = "年度", title = "合計不登校者数と不登校割合の推移（2軸）") +
+  theme_minimal(base_size = 12)
+```
+
+
+```{r hist1}
+# 2022年度 ヒストグラム
+df_2022 <- df |> 
+  filter(year == 2022)
+mean_rate_2022 <- df_2022 |>
+  mean(no_school_rate, na.rm = TRUE)
+
+ggplot(df_2022, aes(x = no_school_rate)) +
+  geom_histogram(bins = 15, fill = "lightblue", color = "white") +
+  geom_vline(xintercept = mean_rate_2022, linetype = "dashed", color = "red") +
+  annotate("text", x = mean_rate_2022, y = Inf, vjust = 1.5,
+           label = paste0("平均: ", round(mean_rate_2022, 2)), size = 3, color = "red") +
+  labs(x = "不登校割合（%）", y = "都道府県数", title = "2022年度 不登校割合の分布")
+```
+
+```{r pref1}
+# 2022年度 都道府県別
+highlight_pref <- "北海道"
+plot_df <- df_2022 |>
+  mutate(
+    pref_ordered = forcats::fct_reorder(prefecture, no_school_rate, .desc = FALSE),
+    highlight = if_else(prefecture == highlight_pref, "highlight", "other")
+  )
+
+ggplot(plot_df, aes(x = pref_ordered, y = no_school_rate, fill = highlight)) +
+  geom_col() +
+  scale_fill_manual(values = c(highlight = "pink", other = "grey80"), guide = "none") +
+  labs(x = "都道府県（高い順）", y = "不登校割合（%）",
+       title = paste0("2022年度 不登校割合（", highlight_pref, "を強調）")) +
+  coord_flip() +
+  theme_minimal(base_size = 10)
+```
+
+5.結果の解釈
+不登校生徒は数・割合の両面をみても増加傾向にあることがわかります。
+長期的なトレンドとしての増加傾向に関しては、①教育の機会の多様化②価値観の多様化により社会で不登校がネガティブに感じられなくなっている可能性　などが指摘できると思います。
+加えて2020年以降に増加率が増えている。この短期的なトレンドに関しては、コロナ禍によるこどものメンタルヘルスの悪化や生活リズムの不調が起こっている可能性を指摘することができると思います。
